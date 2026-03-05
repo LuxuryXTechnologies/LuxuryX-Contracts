@@ -1,0 +1,294 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.30;
+
+/// Developed By: Adesanmi Emmanuel A. (ESM/2016/019, +2348149637835)
+/// Project Supervisor: Dr. C.O. Oluwadare
+/// Department: Surveying & Geoinformatics, Obafemi Awolowo University, Nigeria
+
+// Import SafeMath library
+library SafeMath {
+    function add(uint256 a, uint256 b) internal pure returns (uint256) {
+        uint256 c = a + b;
+        require(c >= a, "SafeMath: addition overflow");
+        return c;
+    }
+
+    function sub(uint256 a, uint256 b) internal pure returns (uint256) {
+        require(b <= a, "SafeMath: subtraction overflow");
+        uint256 c = a - b;
+        return c;
+    }
+
+    function mul(uint256 a, uint256 b) internal pure returns (uint256) {
+        if (a == 0) {
+            return 0;
+        }
+        uint256 c = a * b;
+        require(c / a == b, "SafeMath: multiplication overflow");
+        return c;
+    }
+
+    function div(uint256 a, uint256 b) internal pure returns (uint256) {
+        require(b > 0, "SafeMath: division by zero");
+        uint256 c = a / b;
+        return c;
+    }
+}
+
+/// @title OpenZeppelin ReentrancyGuard (Direct Inclusion)
+/// @notice Prevents reentrancy attacks in function execution
+abstract contract ReentrancyGuard {
+    uint256 private constant _NOT_ENTERED = 1;
+    uint256 private constant _ENTERED = 2;
+    uint256 private _status;
+
+    constructor() {
+        _status = _NOT_ENTERED;
+    }
+
+    modifier nonReentrant() {
+        require(_status != _ENTERED, "ReentrancyGuard: reentrant call");
+        _status = _ENTERED;
+        _;
+        _status = _NOT_ENTERED;
+    }
+}
+
+/// @title OpenZeppelin ERC-721 (NFT Standard)
+/// @notice Enables NFT-based land ownership tracking
+contract ERC721 {
+    using SafeMath for uint256;
+    
+    mapping(uint256 => address) private _owners;
+    mapping(address => uint256) private _balances;
+    mapping(uint256 => address) private _tokenApprovals;
+    
+    event Transfer(address indexed from, address indexed to, uint256 indexed tokenId);
+    event Approval(address indexed owner, address indexed approved, uint256 indexed tokenId);
+
+    function _mint(address to, uint256 tokenId) internal virtual {
+        require(to != address(0), "Mint to zero address");
+        require(_owners[tokenId] == address(0), "Token already minted");
+
+        _balances[to] = _balances[to].add(1);
+        _owners[tokenId] = to;
+
+        emit Transfer(address(0), to, tokenId);
+    }
+
+    function transferFrom(address from, address to, uint256 tokenId) public virtual {
+        require(_owners[tokenId] == from, "Not the owner");
+        require(to != address(0), "Transfer to zero address");
+
+        _balances[from] = _balances[from].sub(1);
+        _balances[to] = _balances[to].add(1);
+        _owners[tokenId] = to;
+
+        emit Transfer(from, to, tokenId);
+    }
+
+    function ownerOf(uint256 tokenId) public view returns (address) {
+        return _owners[tokenId];
+    }
+}
+
+/// @title Secure Blockchain Land Registry with Leasing, Government Approval, History Tracking & Dispute Resolution
+contract OAUSurveyingDepartment2025LandRegistry is ReentrancyGuard, ERC721 {
+    using SafeMath for uint256;
+
+    struct Land {
+        string planNumber;
+        string geoCoordinates;
+        string sellingPrice;
+        string ownerName;
+        string surveyPlanIPFSCID;
+        bool registered;
+        bool isMortgaged;
+        address mortgageLender;
+        uint256 mortgageAmount;
+        bool isApproved;
+        bool isDisputed;
+        address approvedAuthority;
+    }
+
+    struct OwnershipRecord {
+        address previousOwner;
+        address newOwner;
+        uint256 timestamp;
+    }
+
+    struct Lease {
+        address lessee;
+        uint256 leaseStart;
+        uint256 leaseEnd;
+        bool active;
+    }
+
+    struct Dispute {
+        address complainant;
+        string reason;
+        bool resolved;
+    }
+
+    mapping(string => Land) public lands; // Changed from uint256 to string for planNumber
+    mapping(string => OwnershipRecord[]) public landHistory; // Changed to string
+    mapping(string => Lease) public leases; // Changed to string
+    mapping(address => bool) public governmentAuthorities;
+    mapping(string => Dispute) public disputes; // Changed to string
+
+    event LandRegistered(string indexed planNumber, address indexed owner);
+    event LandTransferred(string indexed planNumber, address indexed from, address indexed to);
+    event GovernmentApproval(string indexed planNumber, address indexed approvedBy);
+    event LandLeased(string indexed planNumber, address indexed lessee, uint256 leaseStart, uint256 leaseEnd);
+    event LeaseEnded(string indexed planNumber, address indexed lessee);
+    event DisputeSubmitted(string indexed planNumber, address indexed complainant, string reason);
+    event DisputeResolved(string indexed planNumber, address indexed resolvedBy, address newOwner);
+
+    address public admin;
+
+    constructor() {
+        admin = msg.sender;
+        governmentAuthorities[msg.sender] = true;
+    }
+
+    modifier onlyGovernment() {
+        require(governmentAuthorities[msg.sender], "Only government can approve");
+        _;
+    }
+
+    function addGovernmentAuthority(address govAddress) external {
+        require(msg.sender == admin, "Only admin can add government authority");
+        governmentAuthorities[govAddress] = true;
+    }
+
+    function registerLand(
+        string memory planNumber,
+        string memory geoCoordinates,
+        string memory ownerName,
+        string memory surveyPlanIPFSCID,
+        string memory sellingPrice
+    ) external nonReentrant {
+        require(bytes(planNumber).length > 0, "Plan number cannot be empty");
+        require(!lands[planNumber].registered, "Land already registered");
+
+        uint256 tokenId = uint256(keccak256(abi.encodePacked(planNumber)));
+        _mint(msg.sender, tokenId);
+
+        lands[planNumber] = Land({
+            planNumber: planNumber,
+            geoCoordinates: geoCoordinates,
+            sellingPrice: string(abi.encodePacked(unicode"₦", sellingPrice)),
+            ownerName: ownerName,
+            surveyPlanIPFSCID: surveyPlanIPFSCID,
+            registered: true,
+            isMortgaged: false,
+            mortgageLender: address(0),
+            mortgageAmount: 0,
+            isApproved: false,
+            isDisputed: false,
+            approvedAuthority: address(0)
+        });
+
+        emit LandRegistered(planNumber, msg.sender);
+    }
+
+    function approveLandTransfer(string memory planNumber) external onlyGovernment {
+        require(lands[planNumber].registered, "Land not registered");
+
+        lands[planNumber].isApproved = true;
+        lands[planNumber].approvedAuthority = msg.sender;
+
+        emit GovernmentApproval(planNumber, msg.sender);
+    }
+
+    function transferLand(string memory planNumber, address newOwner) external nonReentrant {
+        require(lands[planNumber].registered, "Land not registered");
+        uint256 tokenId = uint256(keccak256(abi.encodePacked(planNumber)));
+        require(ownerOf(tokenId) == msg.sender, "Only owner can transfer");
+        require(!lands[planNumber].isMortgaged, "Mortgaged land cannot be transferred");
+        require(lands[planNumber].isApproved, "Government approval required");
+        require(!lands[planNumber].isDisputed, "Land has an unresolved dispute");
+
+        landHistory[planNumber].push(OwnershipRecord({
+            previousOwner: msg.sender,
+            newOwner: newOwner,
+            timestamp: block.timestamp
+        }));
+
+        transferFrom(msg.sender, newOwner, tokenId);
+
+        emit LandTransferred(planNumber, msg.sender, newOwner);
+    }
+
+    function submitDispute(string memory planNumber, string memory reason) external {
+        require(lands[planNumber].registered, "Land not registered");
+        require(!lands[planNumber].isDisputed, "Land already has a dispute");
+
+        disputes[planNumber] = Dispute(msg.sender, reason, false);
+        lands[planNumber].isDisputed = true;
+
+        emit DisputeSubmitted(planNumber, msg.sender, reason);
+    }
+
+    function resolveDispute(string memory planNumber, address newOwner) external onlyGovernment {
+        require(lands[planNumber].isDisputed, "No active dispute");
+
+        lands[planNumber].isDisputed = false;
+        disputes[planNumber].resolved = true;
+
+        landHistory[planNumber].push(OwnershipRecord({
+            previousOwner: disputes[planNumber].complainant,
+            newOwner: newOwner,
+            timestamp: block.timestamp
+        }));
+
+        uint256 tokenId = uint256(keccak256(abi.encodePacked(planNumber)));
+        transferFrom(ownerOf(tokenId), newOwner, tokenId);
+
+        emit DisputeResolved(planNumber, msg.sender, newOwner);
+    }
+
+    function getLandDetails(string memory planNumber) external view returns (
+        string memory planNum,
+        string memory geoCoordinates,
+        string memory sellingPrice,
+        string memory ownerName,
+        string memory surveyPlanIPFSCID,
+        bool registered,
+        bool isMortgaged,
+        address mortgageLender,
+        uint256 mortgageAmount,
+        bool isApproved,
+        bool isDisputed,
+        address approvedAuthority
+    ) {
+        require(lands[planNumber].registered, "Land not registered");
+
+        Land storage land = lands[planNumber];
+        return (
+            land.planNumber,
+            land.geoCoordinates,
+            land.sellingPrice,
+            land.ownerName,
+            land.surveyPlanIPFSCID,
+            land.registered,
+            land.isMortgaged,
+            land.mortgageLender,
+            land.mortgageAmount,
+            land.isApproved,
+            land.isDisputed,
+            land.approvedAuthority
+        );
+    }
+
+    /**
+     * @dev Verifies if a given address is the current owner of the land.
+     * @param planNumber The plan number of the land.
+     * @param user The address to verify.
+     * @return bool Returns true if the user is the owner, otherwise false.
+     */
+    function verifyOwnership(string memory planNumber, address user) external view returns (bool) {
+        uint256 tokenId = uint256(keccak256(abi.encodePacked(planNumber)));
+        return ownerOf(tokenId) == user;
+    }
+}
